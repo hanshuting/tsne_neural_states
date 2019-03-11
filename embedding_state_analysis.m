@@ -196,10 +196,110 @@ for n = 1:ncond
     end
 end
 
+%% ap cluster
+% real data
+S = 1-pdist2(spike(:,col)',spike(:,col)','cosine');
+% idx_ap = apcluster(S,ones(size(S,1),1)); % hippo
+% idx_ap = apcluster(S,quantile(S,0.95)); % othercort
+idx_ap = apcluster(S,median(S,2));
+
+num_states_ap = zeros(1,ncond);
+for ii = 1:ncond
+    num_states_ap(ii) = length(unique(idx_ap(expt_indx==ii)));
+end
+
+% shuffle data
+nshuff = 100;
+num_states_ap_shuffle = zeros(ncond,nshuff);
+ncell = size(spike,1);
+for k = 1:nshuff
+
+    fprintf('shuffle #%u\n',k);
+
+    % shuffle each frame
+    spike_shuff = spike(:,col);
+    for ii = 1:length(col)
+        indx = randperm(ncell);
+        spike_shuff(:,ii) = spike_shuff(indx,ii);
+    end
+
+    % similarity matrix
+    S = 1-pdist2(spike_shuff',spike_shuff','cosine');
+
+    % ap clustering
+    % idx = apcluster(S,median(S,2));
+      idx_ap = apcluster(S,quantile(S,0.95));
+
+    % histogram        
+    for ii = 1:ncond
+        num_states_ap_shuffle(ii,k) = length(unique(idx_ap(expt_indx==ii)));
+    end
+
+end
+
+
+%% pca
+nshuff = 100;
+pthr = 0.9;
+
+ncell = size(spike,1);
+
+% real data
+explained_states = zeros(ncond,1);
+for ii = 1:ncond
+    [~,~,~,~,explained] = pca(spike(:,(ii-1)*expt_time+1:ii*expt_time)','centered',false);
+%     s = spike(:,(ii-1)*expt_time+1:ii*expt_time); s = s(:,sum(s,2>0));
+%     [~,~,~,~,explained] = pca(s','centered',false);
+    explained = cumsum(explained);
+    explained = explained/explained(end);
+    if all(isnan(explained))
+        explained_states(ii) = 0;
+    else
+        explained_states(ii) = find(explained>pthr,1);
+    end
+end
+explained_states_maxnor = explained_states/max(explained_states);
+
+% shuffle data
+explained_states_shuffle = zeros(ncond,nshuff);
+explained_states_maxnor_shuffle = zeros(ncond,nshuff);
+
+for k = 1:nshuff
+
+    fprintf('shuffle #%u\n',k);
+
+    % shuffle each frame
+    spike_shuff = spike;
+    for ii = 1:size(spike_shuff,2)
+        indx = randperm(ncell);
+        spike_shuff(:,ii) = spike_shuff(indx,ii);
+    end
+
+    num_cell = size(spike,1);
+    explained_state = zeros(ncond,num_cell);
+    for ii = 1:ncond
+        [~,~,~,~,explained] = pca(spike_shuff(:,(ii-1)*expt_time+1:ii*expt_time)','centered',false);
+        explained = cumsum(explained);
+        explained = explained/explained(end);
+        if all(isnan(explained))
+            explained_states_shuffle(ii,k) = 0;
+        else
+            explained_states_shuffle(ii,k) = find(explained>pthr,1);
+        end
+%         explained_states_shuffle(ii,k) = find(explained>pthr,1);
+    end
+
+    explained_states_maxnor_shuffle(:,k) = explained_states_shuffle(:,k)/...
+        max(explained_states_shuffle(:,k));
+
+end
 
 %% save results
 save('embedding_state_results.mat','col','emCoord','expt_indx','densAll','seg_im',...
-    'segIndx','segIndx_shuff','num_state_tsne','num_state_tsne_shuff','-v7.3');
+    'segIndx','segIndx_shuff','num_state_tsne','num_state_tsne_shuff',...
+    'num_states_ap','num_states_ap_shuffle',...
+    'explained_states_maxnor','explained_states_maxnor_shuffle',...
+    'explained_states','explained_states_shuffle','-v7.3');
 
 
 
